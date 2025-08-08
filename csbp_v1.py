@@ -1,31 +1,44 @@
-import sys
 import io
+import sys
 import json
-from pathlib import Path
+
 from PIL import Image, ImageDraw, ImageFont
+
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
     QTableWidgetItem, QPushButton, QLabel, QComboBox, QFileDialog, QMessageBox, QColorDialog,
     QCheckBox, QDialog, QSizePolicy, QLineEdit, QMenuBar, QAbstractItemView, QSlider
 )
-from PySide6.QtGui import QPixmap, QImage, QAction, QPainter, QColor
+
 from PySide6.QtCore import Qt, QTimer
-import cv2, moviepy
-from moviepy.editor import ImageSequenceClip
-import numpy as np
+from PySide6.QtGui import QPixmap, QImage, QAction, QPainter, QIcon
+
+from images import FAVICON
+
+from ctypes import windll
+
+windll.shell32.SetCurrentProcessExplicitAppUserModelID('Ginyoa.Crappy.Storyboard.Planner')
+
+
 
 DEFAULT_FPS = 24
 ROWS_PER_PAGE = 6
 COLS = 4
 TOTAL_PAGES = 4
 
-class DrawingWidget(QWidget):
-    # brush, eraser, mouse events, .image, .draw, .brush_color, .brush_size, .eraser_mode, update_pixmap, get_pil_image, etv
+# NOTE - StevenPince - Using 854 x 480 (FWVGA) resolution at 16:9 aspect ratio
+DEFAULT_WIDTH = 854
+DEFAULT_HEIGHT = 480
 
-    def __init__(self, width, height, brush_color=(0,0,0,255), brush_size=2, eraser_mode=False, parent=None):
+COLOR_WHITE = (255, 255, 255, 255)
+COLOR_BLACK = (0, 0, 0, 255)
+
+
+class DrawingWidget(QWidget):
+    def __init__(self, width, height, brush_color=COLOR_BLACK, brush_size=2, eraser_mode=False, parent=None):
         super().__init__(parent)
         self.setFixedSize(width, height)
-        self.image = Image.new("RGBA", (width, height), (255,255,255,255))
+        self.image = Image.new("RGBA", (width, height), COLOR_WHITE)
         self.draw = ImageDraw.Draw(self.image)
         self.brush_color = brush_color
         self.brush_size = brush_size
@@ -42,6 +55,10 @@ class DrawingWidget(QWidget):
         self.label.mouseMoveEvent = self.mouseMoveEvent
         self.label.mouseReleaseEvent = self.mouseReleaseEvent
 
+    @property
+    def fill_color(self):
+        return (255, 255, 255, 0) if self.eraser_mode else self.brush_color
+
     def update_pixmap(self):
         data = self.image.tobytes("raw", "RGBA")
         qimg = QImage(data, self.image.width, self.image.height, QImage.Format_RGBA8888)
@@ -50,7 +67,6 @@ class DrawingWidget(QWidget):
 
     def get_pil_image(self):
         return self.image.copy()
-
 
     def mouseMoveEvent(self, event):
         if self.last_pos is not None:
@@ -62,41 +78,33 @@ class DrawingWidget(QWidget):
         self.last_pos = None
 
     def draw_point(self, pos):
-        if self.eraser_mode:
-            self.draw.ellipse(
-                [pos.x() - self.brush_size, pos.y() - self.brush_size,
-                 pos.x() + self.brush_size, pos.y() + self.brush_size],
-                fill=(255, 255, 255, 0))
-        else:
-            self.draw.ellipse(
-                [pos.x() - self.brush_size, pos.y() - self.brush_size,
-                 pos.x() + self.brush_size, pos.y() + self.brush_size],
-                fill=self.brush_color)
+        self.draw.ellipse(xy=[pos.x() - self.brush_size,
+                              pos.y() - self.brush_size,
+                              pos.x() + self.brush_size,
+                              pos.y() + self.brush_size],
+                          fill=self.fill_color)
+
         self.update_pixmap()
 
     def draw_line(self, start, end):
-        if self.eraser_mode:
-            self.draw.line([start.x(), start.y(), end.x(), end.y()], fill=(255, 255, 255, 0), width=self.brush_size * 2)
-        else:
-            self.draw.line([start.x(), start.y(), end.x(), end.y()], fill=self.brush_color, width=self.brush_size * 2)
+        self.draw.line([start.x(), start.y(), end.x(), end.y()], fill=self.fill_color, width=self.brush_size * 2)
+
         self.update_pixmap()
 
 class BigDrawingDialog(QDialog):
-     
-    def __init__(self, pil_image=None, brush_color=(0, 0, 0, 255), brush_size=5, eraser_mode=False, parent=None):
+    def __init__(self, pil_image=None, brush_color=COLOR_BLACK, brush_size=5, eraser_mode=False, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Storyboard Canvas")
-        self.resize(800, 450)  # 16:9 estimatied
-
+        self.canvas_width = DEFAULT_WIDTH
+        self.canvas_height = DEFAULT_HEIGHT
+        self.resize(DEFAULT_WIDTH, DEFAULT_HEIGHT)
         layout = QVBoxLayout(self)
 
-        self.canvas_width = 800
-        self.canvas_height = 450
-
-        if pil_image is not None:
+        if pil_image:
             self.image = pil_image.resize((self.canvas_width, self.canvas_height), Image.LANCZOS).copy()
         else:
-            self.image = Image.new("RGBA", (self.canvas_width, self.canvas_height), (255, 255, 255, 255))
+            self.image = Image.new("RGBA", (self.canvas_width, self.canvas_height), COLOR_WHITE)
+
         self.draw = ImageDraw.Draw(self.image)
 
         self.label = QLabel()
@@ -150,7 +158,6 @@ class BigDrawingDialog(QDialog):
         self.label.mouseMoveEvent = self.mouseMoveEvent
         self.label.mouseReleaseEvent = self.mouseReleaseEvent
 
-
     def open_color_picker(self):
         color = QColorDialog.getColor()
         if color.isValid():
@@ -175,7 +182,7 @@ class BigDrawingDialog(QDialog):
             self.draw_point(pos)
 
     def mouseMoveEvent(self, event):
-        if self.last_pos is not None:
+        if self.last_pos:
             pos = event.position().toPoint() if hasattr(event, 'position') else event.pos()
             self.draw_line(self.last_pos, pos)
             self.last_pos = pos
@@ -184,23 +191,18 @@ class BigDrawingDialog(QDialog):
         self.last_pos = None
 
     def draw_point(self, pos):
-        if self.eraser_mode:
-            self.draw.ellipse(
-                [pos.x() - self.brush_size, pos.y() - self.brush_size,
-                 pos.x() + self.brush_size, pos.y() + self.brush_size],
-                fill=(255, 255, 255, 255))
-        else:
-            self.draw.ellipse(
-                [pos.x() - self.brush_size, pos.y() - self.brush_size,
-                 pos.x() + self.brush_size, pos.y() + self.brush_size],
-                fill=self.brush_color)
+        self.draw.ellipse(
+            [pos.x() - self.brush_size, pos.y() - self.brush_size,
+             pos.x() + self.brush_size, pos.y() + self.brush_size],
+            fill=COLOR_WHITE if self.eraser_mode else self.brush_color)
+
         self.update_pixmap()
 
     def draw_line(self, start, end):
-        if self.eraser_mode:
-            self.draw.line([start.x(), start.y(), end.x(), end.y()], fill=(255, 255, 255, 255), width=self.brush_size * 2)
-        else:
-            self.draw.line([start.x(), start.y(), end.x(), end.y()], fill=self.brush_color, width=self.brush_size * 2)
+        self.draw.line([start.x(), start.y(), end.x(), end.y()],
+                       fill=COLOR_WHITE if self.eraser_mode else self.brush_color,
+                       width=self.brush_size * 2)
+
         self.update_pixmap()
 
     def get_image(self):
@@ -212,9 +214,11 @@ class DurationWidget(QWidget):
         self.fps = fps
         layout = QHBoxLayout(self)
         self.seconds_edit = QLineEdit("0")
-        self.seconds_edit.setFixedWidth(30)
         self.frames_edit = QLineEdit("0")
-        self.frames_edit.setFixedWidth(30)
+
+        for edit in (self.seconds_edit, self.frames_edit):
+            edit.setFixedWidth(30)
+
         layout.addWidget(QLabel("("))
         layout.addWidget(self.seconds_edit)
         layout.addWidget(QLabel("+"))
@@ -272,10 +276,11 @@ class StoryboardTable(QTableWidget):
         item = QTableWidgetItem(str(num))
         item.setFlags(Qt.ItemIsEnabled)
         item.setTextAlignment(Qt.AlignCenter)
+
         return item
-    
+
     def update_geometry(self):
-        total_width = self.viewport().width() or 800  # fallback if zero
+        total_width = self.viewport().width() or DEFAULT_WIDTH  # fallback if zero
         total_height = self.viewport().height() or 600
 
         margin_width = 20
@@ -322,13 +327,12 @@ class StoryboardTable(QTableWidget):
         else:
             btn.setText("Upload Image")
         btn.clicked.connect(self.handle_upload_clicked)
+
         return btn
 
     def _add_upload_button(self, row):
         btn = self.create_fixed_size_button(text="Upload Image", row=row)
-        cell_width = 150
-        cell_height =  85
-        btn.setFixedSize(cell_width, cell_height)
+        btn.setFixedSize(150, 85)
         self.setCellWidget(row, 1, btn)
 
     def _add_description_placeholder(self, row):
@@ -367,11 +371,12 @@ class StoryboardTable(QTableWidget):
 
     def handle_upload_clicked(self):
         button = self.sender()
-        if button:
-            button.setDown(False)  # 🔹 reset visual press
 
         if not button:
             return
+
+        button.setDown(False)  # 🔹 reset visual press
+
         row = button.property("row")
         if row is None:
             return
@@ -380,12 +385,10 @@ class StoryboardTable(QTableWidget):
             # in draw mode, do nothing on upload button clicks
             return
 
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select Storyboard Image",
-            "",
-            "Images (*.png *.jpg *.jpeg *.bmp *.gif)"
-        )
+        file_path, _ = QFileDialog.getOpenFileName(self,
+                                                   "Select Storyboard Image",
+                                                   "",
+                                                   "Images (*.png *.jpg *.jpeg *.bmp *.gif)")
         if not file_path:
             return
 
@@ -470,11 +473,11 @@ class StoryboardTable(QTableWidget):
             # Load full-res image from uploaded_images, fallback to blank canvas
             current_img = self.uploaded_images[row]
             if current_img is None:
-                current_img = Image.new("RGBA", (800, 450), (255, 255, 255, 255))
+                current_img = Image.new("RGBA", (DEFAULT_WIDTH, DEFAULT_HEIGHT), COLOR_WHITE)
 
             dlg = BigDrawingDialog(
                 pil_image=current_img,
-                brush_color=self.draw_widgets[row].brush_color if self.draw_widgets[row] else (0, 0, 0, 255),
+                brush_color=self.draw_widgets[row].brush_color if self.draw_widgets[row] else COLOR_BLACK,
                 brush_size=self.draw_widgets[row].brush_size if self.draw_widgets[row] else 5,
                 eraser_mode=self.draw_widgets[row].eraser_mode if self.draw_widgets[row] else False,
                 parent=self
@@ -638,7 +641,7 @@ class PlayerWindow(QDialog):
         self.elapsed_ms = 0
         self.update_timecode_display(force=True)
 
-        bg = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 255))
+        bg = Image.new("RGBA", (target_w, target_h), COLOR_BLACK)
 
         if pil_image:
             img_ratio = pil_image.width / pil_image.height
@@ -668,8 +671,8 @@ class PlayerWindow(QDialog):
         text = f"Cut no. {self.numbers[index]}"
         margin = 10
         text_pos = (margin, margin)
-        shadow_color = (0, 0, 0, 255)
-        text_color = (255, 255, 255, 255)
+        shadow_color = COLOR_BLACK
+        text_color = COLOR_WHITE
 
         for offset in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
             pos = (text_pos[0] + offset[0], text_pos[1] + offset[1])
@@ -706,8 +709,8 @@ class PlayerWindow(QDialog):
         x = margin
         y = img.height - margin - font_size
 
-        shadow_color = (0, 0, 0, 255)
-        text_color = (255, 255, 255, 255)
+        shadow_color = COLOR_BLACK
+        text_color = COLOR_WHITE
 
         for offset in [(-2, -2), (-2, 2), (2, -2), (2, 2)]:
             draw.text((x + offset[0], y + offset[1]), timecode_text, font=font, fill=shadow_color)
@@ -747,7 +750,7 @@ class PlayerWindow(QDialog):
         target_w, target_h = 1920, 1080  # fixed export size
         target_ratio = 16 / 9
 
-        bg = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 255))
+        bg = Image.new("RGBA", (target_w, target_h), COLOR_BLACK)
 
         if pil_image:
             img_ratio = pil_image.width / pil_image.height
@@ -774,8 +777,8 @@ class PlayerWindow(QDialog):
         text = f"#{self.numbers[index]}"
         margin = 10
         text_pos = (margin, margin)
-        shadow_color = (0, 0, 0, 255)
-        text_color = (255, 255, 255, 255)
+        shadow_color = COLOR_BLACK
+        text_color = COLOR_WHITE
 
         for offset in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
             pos = (text_pos[0] + offset[0], text_pos[1] + offset[1])
@@ -802,8 +805,8 @@ class PlayerWindow(QDialog):
 class StoryboardPlanner(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Crappy Storyboard Planner")
- 
+        self.setWindowTitle("Ginyoa\'s Crappy Storyboard Planner")
+        self.setWindowIcon(QIcon(FAVICON))
 
         self.main_widget = QWidget()
         self.setCentralWidget(self.main_widget)
@@ -811,8 +814,6 @@ class StoryboardPlanner(QMainWindow):
         self.main_layout = QVBoxLayout(self.main_widget)
         self.main_layout.setContentsMargins(10, 10, 10, 10)
         self.main_layout.setSpacing(10)
-        
-                
 
         # File menu bar
         menubar = QMenuBar()
@@ -923,23 +924,18 @@ class StoryboardPlanner(QMainWindow):
                 page.switch_to_upload_mode()
         self.update_view()
 
-
-
     def open_color_picker(self):
         color = QColorDialog.getColor()
-        if color.isValid():
-            rgba = (
-                color.red(),
-                color.green(),
-                color.blue(),
-                255,
-            )
-            self.current_brush_color = rgba
-            # Update all drawing widgets brush color
-            for page in self.pages:
-                for dw in page.draw_widgets:
-                    if dw:
-                        dw.set_brush_color(rgba)
+        if not color.isValid():
+            return
+
+        rgba = (color.red(), color.green(), color.blue(), 255)
+        self.current_brush_color = rgba
+        # Update all drawing widgets brush color
+        for page in self.pages:
+            for dw in page.draw_widgets:
+                if dw:
+                    dw.set_brush_color(rgba)
 
     def brush_size_changed(self, value):
         self.current_brush_size = value
@@ -1018,7 +1014,7 @@ class StoryboardPlanner(QMainWindow):
 
                 img = page.uploaded_images[i]
                 if img is None:
-                    img = Image.new("RGBA", (800, 450), (255, 255, 255, 255))
+                    img = Image.new("RGBA", (DEFAULT_WIDTH, DEFAULT_HEIGHT), COLOR_WHITE)
 
                 frames.append(img)
                 durations.append((s, f))
@@ -1158,7 +1154,7 @@ class StoryboardPlanner(QMainWindow):
         target_w, target_h = 1920, 1080
         target_ratio = 16 / 9
 
-        bg = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 255))
+        bg = Image.new("RGBA", (target_w, target_h), COLOR_BLACK)
 
         if pil_image:
             img_ratio = pil_image.width / pil_image.height
@@ -1185,8 +1181,8 @@ class StoryboardPlanner(QMainWindow):
         text = f"#{self.numbers[index]}"
         margin = 10
         text_pos = (margin, margin)
-        shadow_color = (0, 0, 0, 255)
-        text_color = (255, 255, 255, 255)
+        shadow_color = COLOR_BLACK
+        text_color = COLOR_WHITE
 
         for offset in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
             pos = (text_pos[0] + offset[0], text_pos[1] + offset[1])
@@ -1209,10 +1205,6 @@ class StoryboardPlanner(QMainWindow):
             draw.text(desc_pos, description, font=desc_font, fill=text_color)
 
         return bg
-        
-        
-        
-
 
     def export_spread(self):
         left_idx = self.current_spread_index * 2
@@ -1255,11 +1247,9 @@ class StoryboardPlanner(QMainWindow):
         QMessageBox.information(self, "Export Spread", f"Spread exported successfully to:\n{filename}")
 
 
-        
-        
-
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    app.setStyle('fusion')
     window = StoryboardPlanner()
     window.show()
     sys.exit(app.exec())

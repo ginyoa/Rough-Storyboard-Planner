@@ -1,0 +1,3 @@
+Pillow
+PySide6
+PyInstaller

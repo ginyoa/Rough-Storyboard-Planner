@@ -1,0 +1,1 @@
+pyinstaller ./storyboard_planner.spec
