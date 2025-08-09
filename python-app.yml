@@ -1,0 +1,42 @@
+#it creates an automted executable file
+
+name: Build Python Executable
+
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: write  # Needed to upload release asset
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.10"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: Build executable
+      run: |
+        pyinstaller --onefile csbp_v1.py
+        # The executable will be in dist/csbp_v1 (Linux/Mac) or dist/csbp_v1.exe (Windows)
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v1.0.${{ github.run_number }}
+        name: "Release v1.0.${{ github.run_number }}"
+        files: dist/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
