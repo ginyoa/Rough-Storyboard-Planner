@@ -1,3 +1,8 @@
+# pip install moviepy==1.0.3 # other versions may not work
+# pip install PySide6==6.8.3 # grab the appropriate version for your Python version: https://wiki.qt.io/Qt_for_Python
+# pip install numpy
+# pip install opencv-python
+
 import sys
 import io
 import json
@@ -13,11 +18,42 @@ from PySide6.QtCore import Qt, QTimer
 import cv2, moviepy
 from moviepy.editor import ImageSequenceClip
 import numpy as np
+from localization import Localization
 
 DEFAULT_FPS = 24
 ROWS_PER_PAGE = 6
 COLS = 4
 TOTAL_PAGES = 4
+LOCALE = ""
+LOC = Localization("en-us")
+
+def change_locale(lang):
+    global LOCALE
+    LOC.load_language(lang)
+    print("changed to: " + lang)
+    LOCALE = lang
+    save_config()
+    QMessageBox.information(None, LOC.tr("menu_bar_language"), LOC.tr("msg_box_language_change"))
+
+def save_config():
+    global LOCALE
+    config = {"language": LOCALE if LOCALE else "en-us"}
+    with open("config.json", "w", encoding="utf-8") as f:
+        json.dump(config, f)
+
+def load_config():
+    global LOCALE
+    try:
+        with open("config.json", "r", encoding="utf-8") as f:
+            config = json.load(f)
+        lang = config.get("language", "en-us")
+        LOC.load_language(lang)
+        LOCALE = lang
+    except Exception:
+        LOCALE = "en-us"
+
+load_config()
+
 
 class DrawingWidget(QWidget):
     # brush, eraser, mouse events, .image, .draw, .brush_color, .brush_size, .eraser_mode, update_pixmap, get_pil_image, etv
@@ -106,7 +142,7 @@ class BigDrawingDialog(QDialog):
 
         toolbar = QHBoxLayout()
 
-        self.color_btn = QPushButton("Brush Color")
+        self.color_btn = QPushButton(LOC.tr("canvas_brush_color"))
         self.color_btn.clicked.connect(self.open_color_picker)
         toolbar.addWidget(self.color_btn)
 
@@ -115,10 +151,10 @@ class BigDrawingDialog(QDialog):
         self.brush_slider.setMaximum(30)
         self.brush_slider.setValue(brush_size)
         self.brush_slider.valueChanged.connect(self.update_brush_size)
-        toolbar.addWidget(QLabel("Brush Size"))
+        toolbar.addWidget(QLabel(LOC.tr("canvas_brush_size")))
         toolbar.addWidget(self.brush_slider)
 
-        self.eraser_checkbox = QCheckBox("Eraser")
+        self.eraser_checkbox = QCheckBox(LOC.tr("canvas_eraser"))
         self.eraser_checkbox.setChecked(eraser_mode)
         self.eraser_checkbox.toggled.connect(self.eraser_toggled)
         toolbar.addWidget(self.eraser_checkbox)
@@ -127,11 +163,11 @@ class BigDrawingDialog(QDialog):
 
         btn_layout = QHBoxLayout()
 
-        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn = QPushButton(LOC.tr("canvas_cancel"))
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.save_btn = QPushButton("Confirm")
+        self.save_btn = QPushButton(LOC.tr("canvas_confirm"))
         self.save_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.save_btn)
 
@@ -259,7 +295,7 @@ class StoryboardTable(QTableWidget):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setEditTriggers(QAbstractItemView.AllEditTriggers)
-        self.setHorizontalHeaderLabels(["#", "Storyboard", "Description", "Duration"])
+        self.setHorizontalHeaderLabels(["#", LOC.tr("spread_storyboard"), LOC.tr("spread_description"), LOC.tr("spread_duration")])
         self.verticalHeader().setVisible(False)
 
         for row in range(ROWS_PER_PAGE):
@@ -320,12 +356,12 @@ class StoryboardTable(QTableWidget):
             btn.setIconSize(pixmap.size())
             btn.setText("")
         else:
-            btn.setText("Upload Image")
+            btn.setText(LOC.tr("spread_upload_image"))
         btn.clicked.connect(self.handle_upload_clicked)
         return btn
 
     def _add_upload_button(self, row):
-        btn = self.create_fixed_size_button(text="Upload Image", row=row)
+        btn = self.create_fixed_size_button(text=LOC.tr("spread_upload_image"), row=row)
         cell_width = 150
         cell_height =  85
         btn.setFixedSize(cell_width, cell_height)
@@ -382,7 +418,7 @@ class StoryboardTable(QTableWidget):
 
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select Storyboard Image",
+            LOC.tr("msg_box_select_storyboard_image"),
             "",
             "Images (*.png *.jpg *.jpeg *.bmp *.gif)"
         )
@@ -803,7 +839,6 @@ class StoryboardPlanner(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Crappy Storyboard Planner")
- 
 
         self.main_widget = QWidget()
         self.setCentralWidget(self.main_widget)
@@ -811,42 +846,50 @@ class StoryboardPlanner(QMainWindow):
         self.main_layout = QVBoxLayout(self.main_widget)
         self.main_layout.setContentsMargins(10, 10, 10, 10)
         self.main_layout.setSpacing(10)
-        
                 
 
         # File menu bar
         menubar = QMenuBar()
         self.setMenuBar(menubar)
-        file_menu = menubar.addMenu("File")
+        file_menu = menubar.addMenu(LOC.tr("menu_bar_file"))
 
-        save_action = QAction("Save Project", self)
+        save_action = QAction(LOC.tr("menu_bar_save_project"), self)
         save_action.triggered.connect(self.save_project)
         file_menu.addAction(save_action)
 
-        load_action = QAction("Load Project", self)
+        load_action = QAction(LOC.tr("menu_bar_load_project"), self)
         load_action.triggered.connect(self.load_project)
         file_menu.addAction(load_action)
 
-        export_video_action = QAction("i wouldve made export mp4 but idk how", self)
+        export_video_action = QAction(LOC.tr("menu_bar_export_video"), self)
         file_menu.addAction(export_video_action)
 
-        export_spread_action = QAction("Export Spread (JPG/PNG)", self)
+        export_spread_action = QAction(LOC.tr("menu_bar_export_spread"), self)
         export_spread_action.triggered.connect(self.export_spread)
         file_menu.addAction(export_spread_action)
+
+        ## Language menu bar
+        lang_menu = menubar.addMenu(LOC.tr("menu_bar_language"))
+        languages = ["English US", "Portugês Brasileiro"]
+        languages_code = ["en-us", "pt-br"]
+        for i in range(len(languages)):
+            code = languages_code[i]
+            lang_action = QAction(languages[i], self)
+            lang_action.triggered.connect(lambda checked, code=code: change_locale(code))
+            lang_menu.addAction(lang_action)
 
         top_bar = QHBoxLayout()
         self.main_layout.addLayout(top_bar)
 
-
         # Title box
         self.title_edit = QLineEdit()
-        self.title_edit.setPlaceholderText("Title: Enter storyboard title here...")
+        self.title_edit.setPlaceholderText(LOC.tr("main_title_placeholder"))
         top_bar.addWidget(self.title_edit)
 
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["Upload", "Draw"])
+        self.mode_combo.addItems([LOC.tr("main_upload"), LOC.tr("main_draw")])
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
-        top_bar.addWidget(QLabel("Modes:"))
+        top_bar.addWidget(QLabel(LOC.tr("main_modes")))
         top_bar.addWidget(self.mode_combo)
         top_bar.addStretch()
 
@@ -862,7 +905,7 @@ class StoryboardPlanner(QMainWindow):
         self.pagination_layout.setSpacing(10)
         self.main_layout.addLayout(self.pagination_layout)
 
-        self.prev_btn = QPushButton("Previous")
+        self.prev_btn = QPushButton(LOC.tr("main_previous"))
         self.prev_btn.clicked.connect(self.go_previous)
         self.pagination_layout.addWidget(self.prev_btn)
 
@@ -870,11 +913,11 @@ class StoryboardPlanner(QMainWindow):
         self.page_label.setAlignment(Qt.AlignCenter)
         self.pagination_layout.addWidget(self.page_label, 1)
 
-        self.next_btn = QPushButton("Next")
+        self.next_btn = QPushButton(LOC.tr("main_next"))
         self.next_btn.clicked.connect(self.go_next)
         self.pagination_layout.addWidget(self.next_btn)
 
-        self.play_btn = QPushButton("Play")
+        self.play_btn = QPushButton(LOC.tr("main_play"))
         self.play_btn.clicked.connect(self.play_storyboard)
         self.pagination_layout.addWidget(self.play_btn)
 
@@ -890,7 +933,7 @@ class StoryboardPlanner(QMainWindow):
         for i in range(TOTAL_PAGES):
             start_num = i * ROWS_PER_PAGE + 1
             page = StoryboardTable(page_number=i + 1, fps=DEFAULT_FPS, start_number=start_num)
-            total_label = QLabel("Total Duration: 0 s + 0 f")
+            total_label = QLabel(LOC.tr("main_total_duration") + " 0 s + 0 f")
             total_label.setAlignment(Qt.AlignRight)
             total_label.setStyleSheet("font-weight: bold; padding-right: 5px;")
 
@@ -914,16 +957,14 @@ class StoryboardPlanner(QMainWindow):
 
 
     def on_mode_changed(self, index):
-        mode_text = self.mode_combo.currentText()
-        if "Draw" in mode_text:
+        if index == 1:
             for page in self.pages:
                 page.switch_to_draw_mode()
         else:
             for page in self.pages:
                 page.switch_to_upload_mode()
+
         self.update_view()
-
-
 
     def open_color_picker(self):
         color = QColorDialog.getColor()
@@ -970,7 +1011,7 @@ class StoryboardPlanner(QMainWindow):
                 return
             container = self.page_containers[idx]
             s, f = self.pages[idx].update_page_total_duration()
-            self.total_labels[idx].setText(f"Total Duration: {s} s + {f} f")
+            self.total_labels[idx].setText(LOC.tr("main_total_duration") + f" {s} s + {f} f")
             container.show()
             self.spread_layout.addWidget(container, 1)
 
@@ -978,7 +1019,7 @@ class StoryboardPlanner(QMainWindow):
         show_page(right_idx)
 
         total_spreads = (len(self.pages) + 1) // 2
-        self.page_label.setText(f"Spread {self.current_spread_index + 1} / {total_spreads}")
+        self.page_label.setText(LOC.tr("main_spread") + f" {self.current_spread_index + 1} / {total_spreads}")
 
         self.prev_btn.setEnabled(self.current_spread_index > 0)
         self.next_btn.setEnabled(self.current_spread_index < total_spreads - 1)
@@ -989,7 +1030,7 @@ class StoryboardPlanner(QMainWindow):
         except ValueError:
             return
         s, f = page.update_page_total_duration()
-        self.total_labels[idx].setText(f"Total Duration: {s} s + {f} f")
+        self.total_labels[idx].setText(LOC.tr("main_total_duration") + f" {s} s + {f} f")
 
     def go_previous(self):
         if self.current_spread_index > 0:
@@ -1036,7 +1077,7 @@ class StoryboardPlanner(QMainWindow):
         self.player.show()
 
     def save_project(self):
-        filename, _ = QFileDialog.getSaveFileName(self, "Save Project", "", "Storyboard Project (*.json)")
+        filename, _ = QFileDialog.getSaveFileName(self, LOC.tr("menu_bar_save_project"), "", "Storyboard Project (*.json)")
         if not filename:
             return
         if not filename.endswith(".json"):
@@ -1074,14 +1115,12 @@ class StoryboardPlanner(QMainWindow):
         try:
             with open(filename, "w") as f:
                 json.dump(data, f)
-            QMessageBox.information(self, "Save Project", "Project saved successfully.")
+            QMessageBox.information(self, LOC.tr("menu_bar_save_project"), LOC.tr("msg_box_project_saved_success"))
         except Exception as e:
-            QMessageBox.critical(self, "Save Project", f"Failed to save project:\n{str(e)}")
-
-
+            QMessageBox.critical(self, LOC.tr("menu_bar_save_project"), LOC.tr("msg_box_project_saved_fail") + f"\n{str(e)}")
 
     def load_project(self):
-        filename, _ = QFileDialog.getOpenFileName(self, "Load Project", "", "Storyboard Project (*.json)")
+        filename, _ = QFileDialog.getOpenFileName(self, LOC.tr("menu_bar_load_project"), "", "Storyboard Project (*.json)")
         if not filename:
             return
 
@@ -1089,7 +1128,7 @@ class StoryboardPlanner(QMainWindow):
             with open(filename, "r") as f:
                 data = json.load(f)
         except Exception as e:
-            QMessageBox.critical(self, "Load Project", f"Failed to load project:\n{str(e)}")
+            QMessageBox.critical(self, LOC.tr("menu_bar_load_project"), LOC.tr("msg_box_project_load_fail") + f"\n{str(e)}")
             return
 
         self.title_edit.setText(data.get("title", ""))
@@ -1148,8 +1187,7 @@ class StoryboardPlanner(QMainWindow):
                             page.setCellWidget(row_idx, 1, dw)
 
         self.update_view()
-        QMessageBox.information(self, "Load Project", "Project loaded successfully.")
-
+        QMessageBox.information(self, LOC.tr("menu_bar_load_project"), LOC.tr("msg_box_project_load_success"))
 
     def render_frame_for_export(self, index):
         from PIL import Image, ImageDraw, ImageFont
@@ -1209,10 +1247,6 @@ class StoryboardPlanner(QMainWindow):
             draw.text(desc_pos, description, font=desc_font, fill=text_color)
 
         return bg
-        
-        
-        
-
 
     def export_spread(self):
         left_idx = self.current_spread_index * 2
@@ -1225,10 +1259,10 @@ class StoryboardPlanner(QMainWindow):
             containers_to_export.append(self.page_containers[right_idx])
 
         if not containers_to_export:
-            QMessageBox.warning(self, "Export Spread", "No spread to export.")
+            QMessageBox.warning(self, LOC.tr("msg_box_export_spread"), LOC.tr("msg_box_export_no_spread"))
             return
 
-        filename, filter_ = QFileDialog.getSaveFileName(self, "Export Spread as Image", "", "PNG Image (*.png);;JPEG Image (*.jpg)")
+        filename, filter_ = QFileDialog.getSaveFileName(self, LOC.tr("msg_box_export_spread_as_image"), "", "PNG Image (*.png);;JPEG Image (*.jpg)")
         if not filename:
             return
 
@@ -1252,11 +1286,7 @@ class StoryboardPlanner(QMainWindow):
         else:
             result_img.save(filename, "PNG")
 
-        QMessageBox.information(self, "Export Spread", f"Spread exported successfully to:\n{filename}")
-
-
-        
-        
+        QMessageBox.information(self, LOC.tr("menu_bar_export_spread"), LOC.tr("main_export_success") + f"\n{filename}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
