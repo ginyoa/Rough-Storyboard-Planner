@@ -1,7 +1,7 @@
 import sys
 import io
 import json
-from pathlib import Path
+
 from PIL import Image, ImageDraw, ImageFont
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
@@ -10,14 +10,12 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QPixmap, QImage, QAction, QPainter, QColor
 from PySide6.QtCore import Qt, QTimer
-import cv2, moviepy
-from moviepy.editor import ImageSequenceClip
-import numpy as np
 
 DEFAULT_FPS = 24
 ROWS_PER_PAGE = 6
 COLS = 4
 TOTAL_PAGES = 4
+
 
 class DrawingWidget(QWidget):
     # brush, eraser, mouse events, .image, .draw, .brush_color, .brush_size, .eraser_mode, update_pixmap, get_pil_image, etv
