@@ -19,9 +19,39 @@ ROWS_PER_PAGE = 6
 COLS = 4
 TOTAL_PAGES = 4
 
-class DrawingWidget(QWidget):
-    # brush, eraser, mouse events, .image, .draw, .brush_color, .brush_size, .eraser_mode, update_pixmap, get_pil_image, etv
+def wrap_text(text, font, max_width):
+    lines = []
+    words = text.split()
+    line = []
+    for word in words:
+        test_line = ' '.join(line + [word])
+        bbox = font.getbbox(test_line)
+        if bbox[2] - bbox[0] <= max_width:
+            line.append(word)
+        else:
+            if line:
+                lines.append(' '.join(line))
+            line = [word]
+    if line:
+        lines.append(' '.join(line))
+    return lines
 
+def draw_wrapped_text(draw, lines, x, y, font, text_color, shadow_color, align='left', line_spacing=0):
+    bbox_A = font.getbbox('A')
+    line_height = bbox_A[3] - bbox_A[1] + line_spacing
+    for idx, line in enumerate(lines):
+        bbox = font.getbbox(line)
+        line_width = bbox[2] - bbox[0]
+        if align == 'right':
+            line_x = x - line_width
+        else:
+            line_x = x
+        line_y = y + idx * line_height
+        for offset in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
+            draw.text((line_x + offset[0], line_y + offset[1]), line, font=font, fill=shadow_color)
+        draw.text((line_x, line_y), line, font=font, fill=text_color)
+
+class DrawingWidget(QWidget):
     def __init__(self, width, height, brush_color=(0,0,0,255), brush_size=2, eraser_mode=False, parent=None):
         super().__init__(parent)
         self.setFixedSize(width, height)
@@ -50,7 +80,6 @@ class DrawingWidget(QWidget):
 
     def get_pil_image(self):
         return self.image.copy()
-
 
     def mouseMoveEvent(self, event):
         if self.last_pos is not None:
@@ -82,11 +111,10 @@ class DrawingWidget(QWidget):
         self.update_pixmap()
 
 class BigDrawingDialog(QDialog):
-     
     def __init__(self, pil_image=None, brush_color=(0, 0, 0, 255), brush_size=5, eraser_mode=False, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Storyboard Canvas")
-        self.resize(800, 450)  # 16:9 estimatied
+        self.resize(800, 450)
 
         layout = QVBoxLayout(self)
 
@@ -135,7 +163,6 @@ class BigDrawingDialog(QDialog):
         self.save_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.save_btn)
 
-
         layout.addLayout(btn_layout)
 
         self.brush_color = brush_color
@@ -149,7 +176,6 @@ class BigDrawingDialog(QDialog):
         self.label.mousePressEvent = self.mousePressEvent
         self.label.mouseMoveEvent = self.mouseMoveEvent
         self.label.mouseReleaseEvent = self.mouseReleaseEvent
-
 
     def open_color_picker(self):
         color = QColorDialog.getColor()
@@ -252,8 +278,8 @@ class StoryboardTable(QTableWidget):
         self.start_number = start_number
         self.duration_widgets = []
         self.uploaded_images = [None] * ROWS_PER_PAGE
-        self.draw_widgets = [None] * ROWS_PER_PAGE  # Store drawing widgets if in draw mode
-        self.mode = "upload"  # def
+        self.draw_widgets = [None] * ROWS_PER_PAGE
+        self.mode = "upload"
 
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -275,7 +301,7 @@ class StoryboardTable(QTableWidget):
         return item
     
     def update_geometry(self):
-        total_width = self.viewport().width() or 800  # fallback if zero
+        total_width = self.viewport().width() or 800
         total_height = self.viewport().height() or 600
 
         margin_width = 20
@@ -303,7 +329,6 @@ class StoryboardTable(QTableWidget):
         self.setColumnWidth(2, col3_width)
         self.setColumnWidth(3, col4_width)
 
-        # Resize drawing widgets if any
         for dw in self.draw_widgets:
             if dw:
                 dw.setFixedSize(storyboard_width, row_height)
@@ -312,8 +337,8 @@ class StoryboardTable(QTableWidget):
         btn = QPushButton()
         btn.setProperty("row", row)
         btn.setFlat(True)
-        btn.setCheckable(False)  # 🔹 Make sure it's not a toggle button
-        btn.setDown(False)     
+        btn.setCheckable(False)
+        btn.setDown(False)
         btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         if pixmap:
             btn.setIcon(pixmap)
@@ -327,7 +352,7 @@ class StoryboardTable(QTableWidget):
     def _add_upload_button(self, row):
         btn = self.create_fixed_size_button(text="Upload Image", row=row)
         cell_width = 150
-        cell_height =  85
+        cell_height = 85
         btn.setFixedSize(cell_width, cell_height)
         self.setCellWidget(row, 1, btn)
 
@@ -368,7 +393,7 @@ class StoryboardTable(QTableWidget):
     def handle_upload_clicked(self):
         button = self.sender()
         if button:
-            button.setDown(False)  # 🔹 reset visual press
+            button.setDown(False)
 
         if not button:
             return
@@ -377,7 +402,6 @@ class StoryboardTable(QTableWidget):
             return
 
         if self.mode != "upload":
-            # in draw mode, do nothing on upload button clicks
             return
 
         file_path, _ = QFileDialog.getOpenFileName(
@@ -401,7 +425,6 @@ class StoryboardTable(QTableWidget):
         img_btn.setToolTip(file_path)
         self.setCellWidget(row, 1, img_btn)
 
-        # Clear draw widget if any
         if self.draw_widgets[row]:
             self.draw_widgets[row].deleteLater()
             self.draw_widgets[row] = None
@@ -424,7 +447,6 @@ class StoryboardTable(QTableWidget):
 
     def switch_to_draw_mode(self):
         self.mode = "draw"
-        # Replace storyboard column widgets with DrawingWidgets or blank if none
         for row in range(ROWS_PER_PAGE):
             if self.draw_widgets[row] is None:
                 dw = DrawingWidget(self.columnWidth(1), self.rowHeight(row))
@@ -433,11 +455,10 @@ class StoryboardTable(QTableWidget):
                 dw = self.draw_widgets[row]
                 dw.setFixedSize(self.columnWidth(1), self.rowHeight(row))
             self.setCellWidget(row, 1, self.draw_widgets[row])
-            self.uploaded_images[row] = None  # Clear uploaded images in draw mode
+            self.uploaded_images[row] = None
 
     def switch_to_upload_mode(self):
         self.mode = "upload"
-        # Replace storyboard column widgets with upload buttons or uploaded image buttons
         for row in range(ROWS_PER_PAGE):
             if self.draw_widgets[row]:
                 self.draw_widgets[row].deleteLater()
@@ -467,7 +488,6 @@ class StoryboardTable(QTableWidget):
         row = index.row()
         col = index.column()
         if col == 1 and 0 <= row < ROWS_PER_PAGE:
-            # Load full-res image from uploaded_images, fallback to blank canvas
             current_img = self.uploaded_images[row]
             if current_img is None:
                 current_img = Image.new("RGBA", (800, 450), (255, 255, 255, 255))
@@ -482,15 +502,12 @@ class StoryboardTable(QTableWidget):
             if dlg.exec() == QDialog.Accepted:
                 new_img = dlg.get_image()
 
-                # Store full-res image for playback/export
                 self.uploaded_images[row] = new_img
 
-                # Create thumbnail sized to cell
                 thumb_width = self.columnWidth(1)
                 thumb_height = self.rowHeight(row)
                 thumbnail_img = new_img.resize((thumb_width, thumb_height), Image.LANCZOS)
 
-                # Update or create the draw widget thumbnail
                 if self.draw_widgets[row]:
                     self.draw_widgets[row].image = thumbnail_img
                     self.draw_widgets[row].draw = ImageDraw.Draw(self.draw_widgets[row].image)
@@ -503,7 +520,6 @@ class StoryboardTable(QTableWidget):
                     self.draw_widgets[row] = dw
                     self.setCellWidget(row, 1, dw)
 
-                # Update draw widget image resized to widget size for thumbnail
                 if self.draw_widgets[row]:
                     self.draw_widgets[row].image = new_img.resize(
                         (self.draw_widgets[row].width(), self.draw_widgets[row].height()),
@@ -511,10 +527,8 @@ class StoryboardTable(QTableWidget):
                     )
                     self.draw_widgets[row].draw = ImageDraw.Draw(self.draw_widgets[row].image)
                     self.draw_widgets[row].update_pixmap()
-                    # Store full res big image in uploaded_images for player
                     self.uploaded_images[row] = new_img
                 else:
-                    # Justincase
                     dw = DrawingWidget(self.columnWidth(1), self.rowHeight(row))
                     dw.image = new_img.resize(
                         (dw.width(), dw.height()), Image.LANCZOS)
@@ -555,7 +569,6 @@ class StoryboardTable(QTableWidget):
         self.setColumnWidth(2, col3_width)
         self.setColumnWidth(3, col4_width)
 
-        # Resize drawing widgets if any
         for dw in self.draw_widgets:
             if dw:
                 dw.setFixedSize(storyboard_width, row_height)
@@ -632,12 +645,6 @@ class PlayerWindow(QDialog):
             new_w = target_w
             new_h = int(new_w / target_ratio)
 
-        img_resized = pil_image.resize((new_w, new_h), Image.LANCZOS).convert("RGBA")
-
-        self.current_image = img_resized
-        self.elapsed_ms = 0
-        self.update_timecode_display(force=True)
-
         bg = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 255))
 
         if pil_image:
@@ -653,11 +660,7 @@ class PlayerWindow(QDialog):
             x_offset = (target_w - new_w) // 2
             y_offset = (target_h - new_h) // 2
             bg.paste(resized_img, (x_offset, y_offset))
-        else:
-            # blank black frame
-            pass
 
-        # Draw storyboard number on top-left
         draw = ImageDraw.Draw(bg)
         font_size = max(10, target_h // 20)
         try:
@@ -678,9 +681,8 @@ class PlayerWindow(QDialog):
         draw.text(text_pos, text, font=font, fill=text_color)
 
         self.current_image = bg
-        self.elapsed_ms = 0  # reset timecode count on new frame
+        self.elapsed_ms = 0
         self.update_timecode_display(force=True)
-    
 
     def update_timecode_display(self, force=False):
         if not self.current_image:
@@ -713,7 +715,7 @@ class PlayerWindow(QDialog):
             draw.text((x + offset[0], y + offset[1]), timecode_text, font=font, fill=shadow_color)
         draw.text((x, y), timecode_text, font=font, fill=text_color)
 
-        # Draw description bottom-left aligned left
+        #draw wrapped description at bottom-right
         description = self.descriptions[self.current_index]
         if description:
             desc_font_size = max(18, img.height // 30)
@@ -723,28 +725,23 @@ class PlayerWindow(QDialog):
                 desc_font = ImageFont.load_default()
 
             desc_margin = 15
-            # Get bounding box: (left, top, right, bottom)
-            bbox = desc_font.getbbox(description)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
+            max_width = img.width // 2  #adjust as needed to prevent text overflow
+            lines = wrap_text(description, desc_font, max_width)
+            bbox_A = desc_font.getbbox('A')
+            line_height = bbox_A[3] - bbox_A[1]
+            total_height = len(lines) * line_height
+            desc_pos_y = img.height - desc_margin - total_height
+            desc_pos_x = img.width - desc_margin
+            draw_wrapped_text(draw, lines, desc_pos_x, desc_pos_y, desc_font, text_color, shadow_color, align='right')
 
-            desc_pos = (img.width - desc_margin - text_width, img.height - desc_margin - text_height)
-
-                # Draw shadow for readability
-            for offset in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
-                pos = (desc_pos[0] + offset[0], desc_pos[1] + offset[1])
-                draw.text(pos, description, font=desc_font, fill=shadow_color)
-
-             # Draw main text
-            draw.text(desc_pos, description, font=desc_font, fill=text_color)
-            data = img.tobytes("raw", "RGBA")
-            qimg = QImage(data, img.width, img.height, QImage.Format_RGBA8888)
-            pixmap = QPixmap.fromImage(qimg)
-            self.label.setPixmap(pixmap.scaled(self.label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        data = img.tobytes("raw", "RGBA")
+        qimg = QImage(data, img.width, img.height, QImage.Format_RGBA8888)
+        pixmap = QPixmap.fromImage(qimg)
+        self.label.setPixmap(pixmap.scaled(self.label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
     def render_frame_for_export(self, index):
         pil_image = self.frames[index]
-        target_w, target_h = 1920, 1080  # fixed export size
+        target_w, target_h = 1920, 1080
         target_ratio = 16 / 9
 
         bg = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 255))
@@ -764,7 +761,6 @@ class PlayerWindow(QDialog):
 
         draw = ImageDraw.Draw(bg)
 
-        # Draw storyboard number
         font_size = max(24, target_h // 20)
         try:
             font = ImageFont.truetype("arial.ttf", font_size)
@@ -782,7 +778,6 @@ class PlayerWindow(QDialog):
             draw.text(pos, text, font=font, fill=shadow_color)
         draw.text(text_pos, text, font=font, fill=text_color)
 
-        # Draw description bottom-right
         description = self.descriptions[index] if hasattr(self, "descriptions") else ""
         if description:
             desc_font_size = max(18, target_h // 30)
@@ -790,12 +785,14 @@ class PlayerWindow(QDialog):
                 desc_font = ImageFont.truetype("arial.ttf", desc_font_size)
             except IOError:
                 desc_font = ImageFont.load_default()
-            desc_w, desc_h = draw.textsize(description, font=desc_font)
-            desc_pos = (target_w - desc_w - 15, target_h - desc_h - 15)
-            for offset in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
-                pos = (desc_pos[0] + offset[0], desc_pos[1] + offset[1])
-                draw.text(pos, description, font=desc_font, fill=shadow_color)
-            draw.text(desc_pos, description, font=desc_font, fill=text_color)
+            max_width = target_w - 30
+            lines = wrap_text(description, desc_font, max_width)
+            bbox_A = desc_font.getbbox('A')
+            line_height = bbox_A[3] - bbox_A[1]
+            total_height = len(lines) * line_height
+            desc_pos_y = target_h - 15 - total_height
+            desc_pos_x = target_w - 15
+            draw_wrapped_text(draw, lines, desc_pos_x, desc_pos_y, desc_font, text_color, shadow_color, align='right')
 
         return bg
 
@@ -803,7 +800,6 @@ class StoryboardPlanner(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Crappy Storyboard Planner")
- 
 
         self.main_widget = QWidget()
         self.setCentralWidget(self.main_widget)
@@ -811,10 +807,7 @@ class StoryboardPlanner(QMainWindow):
         self.main_layout = QVBoxLayout(self.main_widget)
         self.main_layout.setContentsMargins(10, 10, 10, 10)
         self.main_layout.setSpacing(10)
-        
-                
 
-        # File menu bar
         menubar = QMenuBar()
         self.setMenuBar(menubar)
         file_menu = menubar.addMenu("File")
@@ -827,7 +820,8 @@ class StoryboardPlanner(QMainWindow):
         load_action.triggered.connect(self.load_project)
         file_menu.addAction(load_action)
 
-        export_video_action = QAction("i wouldve made export mp4 but idk how", self)
+        export_video_action = QAction("Export MP4", self)
+        export_video_action.triggered.connect(self.export_video)
         file_menu.addAction(export_video_action)
 
         export_spread_action = QAction("Export Spread (JPG/PNG)", self)
@@ -837,8 +831,6 @@ class StoryboardPlanner(QMainWindow):
         top_bar = QHBoxLayout()
         self.main_layout.addLayout(top_bar)
 
-
-        # Title box
         self.title_edit = QLineEdit()
         self.title_edit.setPlaceholderText("Title: Enter storyboard title here...")
         top_bar.addWidget(self.title_edit)
@@ -882,11 +874,6 @@ class StoryboardPlanner(QMainWindow):
         self.page_containers = []
         self.total_labels = []
 
-        
-
-        for page in self.pages:
-           page.update_geometry()
-
         for i in range(TOTAL_PAGES):
             start_num = i * ROWS_PER_PAGE + 1
             page = StoryboardTable(page_number=i + 1, fps=DEFAULT_FPS, start_number=start_num)
@@ -909,9 +896,7 @@ class StoryboardPlanner(QMainWindow):
         self.update_view()
         self.resize(1200, 700)
 
-        # Set default mode for all pages
         self.on_mode_changed(self.mode_combo.currentIndex())
-
 
     def on_mode_changed(self, index):
         mode_text = self.mode_combo.currentText()
@@ -922,38 +907,6 @@ class StoryboardPlanner(QMainWindow):
             for page in self.pages:
                 page.switch_to_upload_mode()
         self.update_view()
-
-
-
-    def open_color_picker(self):
-        color = QColorDialog.getColor()
-        if color.isValid():
-            rgba = (
-                color.red(),
-                color.green(),
-                color.blue(),
-                255,
-            )
-            self.current_brush_color = rgba
-            # Update all drawing widgets brush color
-            for page in self.pages:
-                for dw in page.draw_widgets:
-                    if dw:
-                        dw.set_brush_color(rgba)
-
-    def brush_size_changed(self, value):
-        self.current_brush_size = value
-        for page in self.pages:
-            for dw in page.draw_widgets:
-                if dw:
-                    dw.brush_size = value
-
-    def eraser_toggled(self, checked):
-        self.eraser_mode = checked
-        for page in self.pages:
-            for dw in page.draw_widgets:
-                if dw:
-                    dw.set_eraser_mode(checked)
 
     def update_view(self):
         for i in reversed(range(self.spread_layout.count())):
@@ -1011,10 +964,8 @@ class StoryboardPlanner(QMainWindow):
         for page in self.pages:
             for i in range(ROWS_PER_PAGE):
                 s, f = page.duration_widgets[i].get_duration()
-
-                # Force a minimum duration if the user hasn't set one
                 if s == 0 and f == 0:
-                    continue 
+                    continue
 
                 img = page.uploaded_images[i]
                 if img is None:
@@ -1025,7 +976,6 @@ class StoryboardPlanner(QMainWindow):
                 storyboard_number = page.start_number + i
                 numbers.append(storyboard_number)
 
-                # Always add description, even if it's empty
                 desc_item = page.item(i, 2)
                 descriptions.append(desc_item.text() if desc_item else "")
 
@@ -1077,8 +1027,6 @@ class StoryboardPlanner(QMainWindow):
             QMessageBox.information(self, "Save Project", "Project saved successfully.")
         except Exception as e:
             QMessageBox.critical(self, "Save Project", f"Failed to save project:\n{str(e)}")
-
-
 
     def load_project(self):
         filename, _ = QFileDialog.getOpenFileName(self, "Load Project", "", "Storyboard Project (*.json)")
@@ -1143,76 +1091,12 @@ class StoryboardPlanner(QMainWindow):
                         page._add_upload_button(row_idx)
                     else:
                         if page.draw_widgets[row_idx] is None:
-                            dw = DrawingWidget(page.columnWidth(1), page.rowHeight(row_idx))
+                            dw = DrawingWidget(page.columnWidth(1), self.rowHeight(row_idx))
                             page.draw_widgets[row_idx] = dw
                             page.setCellWidget(row_idx, 1, dw)
 
         self.update_view()
         QMessageBox.information(self, "Load Project", "Project loaded successfully.")
-
-
-    def render_frame_for_export(self, index):
-        from PIL import Image, ImageDraw, ImageFont
-
-        pil_image = self.frames[index]
-        target_w, target_h = 1920, 1080
-        target_ratio = 16 / 9
-
-        bg = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 255))
-
-        if pil_image:
-            img_ratio = pil_image.width / pil_image.height
-            if img_ratio > target_ratio:
-                new_w = target_w
-                new_h = int(target_w / img_ratio)
-            else:
-                new_h = target_h
-                new_w = int(target_h * img_ratio)
-            resized_img = pil_image.resize((new_w, new_h), Image.LANCZOS)
-            x_offset = (target_w - new_w) // 2
-            y_offset = (target_h - new_h) // 2
-            bg.paste(resized_img, (x_offset, y_offset))
-
-        draw = ImageDraw.Draw(bg)
-
-        # Storyboard number
-        font_size = max(24, target_h // 20)
-        try:
-            font = ImageFont.truetype("arial.ttf", font_size)
-        except IOError:
-            font = ImageFont.load_default()
-
-        text = f"#{self.numbers[index]}"
-        margin = 10
-        text_pos = (margin, margin)
-        shadow_color = (0, 0, 0, 255)
-        text_color = (255, 255, 255, 255)
-
-        for offset in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
-            pos = (text_pos[0] + offset[0], text_pos[1] + offset[1])
-            draw.text(pos, text, font=font, fill=shadow_color)
-        draw.text(text_pos, text, font=font, fill=text_color)
-
-        # Description bottom-right
-        description = getattr(self, "descriptions", [""] * len(self.frames))[index]
-        if description:
-            desc_font_size = max(18, target_h // 30)
-            try:
-                desc_font = ImageFont.truetype("arial.ttf", desc_font_size)
-            except IOError:
-                desc_font = ImageFont.load_default()
-            desc_w, desc_h = draw.textbbox((0, 0), description, font=desc_font)[2:]
-            desc_pos = (target_w - desc_w - 15, target_h - desc_h - 15)
-            for offset in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
-                pos = (desc_pos[0] + offset[0], desc_pos[1] + offset[1])
-                draw.text(pos, description, font=desc_font, fill=shadow_color)
-            draw.text(desc_pos, description, font=desc_font, fill=text_color)
-
-        return bg
-        
-        
-        
-
 
     def export_spread(self):
         left_idx = self.current_spread_index * 2
@@ -1232,7 +1116,6 @@ class StoryboardPlanner(QMainWindow):
         if not filename:
             return
 
-        # Export both pages in spread horizontally combined
         pixmaps = [container.grab() for container in containers_to_export]
         total_width = sum(p.width() for p in pixmaps)
         max_height = max(p.height() for p in pixmaps)
@@ -1254,12 +1137,140 @@ class StoryboardPlanner(QMainWindow):
 
         QMessageBox.information(self, "Export Spread", f"Spread exported successfully to:\n{filename}")
 
+    def export_video(self):
+        storyboard_frames = []
+        storyboard_durations = []  #in secs
+        numbers = []
+        descriptions = []
 
-        
-        
+        for page in self.pages:
+            for i in range(ROWS_PER_PAGE):
+                s, f = page.duration_widgets[i].get_duration()
+                if s == 0 and f == 0:
+                    continue
+                img = page.uploaded_images[i] or Image.new("RGBA", (1920, 1080), (255, 255, 255, 255))
+                storyboard_frames.append(img)
+                storyboard_durations.append(s + f / DEFAULT_FPS)
+                storyboard_number = page.start_number + i
+                numbers.append(storyboard_number)
+                desc_item = page.item(i, 2)
+                descriptions.append(desc_item.text() if desc_item else "")
+
+        if not storyboard_frames:
+            QMessageBox.warning(self, "Export Video", "No frames to export.")
+            return
+
+        video_fps = DEFAULT_FPS
+        rendered_frames = []
+
+        for i in range(len(storyboard_frames)):
+            #render base img with #n and wraped description
+            base_bg = self.render_base_frame(storyboard_frames[i], numbers[i], descriptions[i])
+
+            total_video_frames = max(1, int(storyboard_durations[i] * video_fps))  #at laest 1 frame
+
+            for vf in range(total_video_frames):
+                img = base_bg.copy()
+                draw = ImageDraw.Draw(img)
+
+                elapsed_sec = vf // video_fps
+                elapsed_frame = vf % video_fps
+                timecode_text = f"{elapsed_sec:02d}s + {elapsed_frame:02d}f"
+
+                target_h = img.height
+                font_size = max(24, target_h // 20)
+                try:
+                    font = ImageFont.truetype("arial.ttf", font_size)
+                except IOError:
+                    font = ImageFont.load_default()
+
+                margin = target_h // 30
+                x = margin
+                y = target_h - margin - font_size
+
+                shadow_color = (0, 0, 0, 255)
+                text_color = (255, 255, 255, 255)
+
+                for offset in [(-2, -2), (-2, 2), (2, -2), (2, 2)]:
+                    draw.text((x + offset[0], y + offset[1]), timecode_text, font=font, fill=shadow_color)
+                draw.text((x, y), timecode_text, font=font, fill=text_color)
+
+                rendered_frames.append(np.array(img))
+
+        clip = ImageSequenceClip(rendered_frames, fps=video_fps)
+        filename, _ = QFileDialog.getSaveFileName(self, "Export Video", "", "MP4 Video (*.mp4)")
+        if filename:
+            if not filename.endswith(".mp4"):
+                filename += ".mp4"
+            clip.write_videofile(filename, fps=video_fps)
+            QMessageBox.information(self, "Export Video", f"Video exported successfully to:\n{filename}")
+        else:
+            QMessageBox.warning(self, "Export Video", "No file selected for export.")
+
+    def render_base_frame(self, pil_image, number, description):
+        target_w, target_h = 1920, 1080
+        target_ratio = 16 / 9
+
+        bg = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 255))
+
+        if pil_image:
+            img_ratio = pil_image.width / pil_image.height
+            if img_ratio > target_ratio:
+                new_w = target_w
+                new_h = int(target_w / img_ratio)
+            else:
+                new_h = target_h
+                new_w = int(target_h * img_ratio)
+            resized_img = pil_image.resize((new_w, new_h), Image.LANCZOS)
+            x_offset = (target_w - new_w) // 2
+            y_offset = (target_h - new_h) // 2
+            bg.paste(resized_img, (x_offset, y_offset))
+
+        draw = ImageDraw.Draw(bg)
+
+        font_size = max(24, target_h // 20)
+        try:
+            font = ImageFont.truetype("arial.ttf", font_size)
+        except IOError:
+            font = ImageFont.load_default()
+
+        text = f"Cut no. #{number}"
+        margin = 10
+        text_pos = (margin, margin)
+        shadow_color = (0, 0, 0, 255)
+        text_color = (255, 255, 255, 255)
+
+        for offset in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
+            pos = (text_pos[0] + offset[0], text_pos[1] + offset[1])
+            draw.text(pos, text, font=font, fill=shadow_color)
+        draw.text(text_pos, text, font=font, fill=text_color)
+
+        if description:
+            desc_font_size = max(18, target_h // 30)
+            try:
+                desc_font = ImageFont.truetype("arial.ttf", desc_font_size)
+            except IOError:
+                desc_font = ImageFont.load_default()
+            max_width = target_w - 30
+            lines = wrap_text(description, desc_font, max_width)
+            bbox_A = desc_font.getbbox('A')
+            line_height = bbox_A[3] - bbox_A[1]
+            total_height = len(lines) * line_height
+            desc_pos_y = target_h - 15 - total_height
+            desc_pos_x = target_w - 15
+            draw_wrapped_text(draw, lines, desc_pos_x, desc_pos_y, desc_font, text_color, shadow_color, align='right')
+
+        return bg
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = StoryboardPlanner()
     window.show()
-    sys.exit(app.exec())
+    sys.exit(app.exec())    
+
+
+# Original Script by https://github.com/ginyoa
+
+# Mp4 eport functionality added by https://github.com/SmartGuy09
+
+# elso this took me like an entire day to figure out so pls star my fork ⭐ hehe
